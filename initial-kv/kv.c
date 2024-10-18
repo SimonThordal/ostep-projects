@@ -2,6 +2,9 @@
 #include <string.h>
 #include <stdlib.h>
 #include <errno.h>
+#define _GNU_SOURCE
+
+const char* DATABASE_FILE = "database.txt";
 
 /**
  * Enter a value into the DB with a given key.
@@ -43,6 +46,25 @@ int put(char* _arg) {
 }
 
 /**
+ * List all k,v pairs in the database.
+ */
+int all(FILE *fp) {
+    rewind(fp);
+    errno = 0;
+    size_t n;
+    char* line = NULL;
+    size_t len = 0;
+    while ((n = getline(&line, &len, fp)) != -1)
+    {
+        if (errno != 0) {
+            return -1;
+        }
+        printf("%s", line);
+    }
+    return 0;
+}
+
+/**
  * Get the value stored in a given key.
  * Expects arguments of the form g,KEY
  */
@@ -52,8 +74,18 @@ char *get(char* arg) {
 
 int main(int argc, char* argv[]) {
     // If no arguments are given exit
-    if (argc < 1) {
+    if (argc < 2) {
         exit(EXIT_SUCCESS);
+    }
+    // Initialize the database
+    FILE *fp = fopen(DATABASE_FILE, "r+");
+    if (fp == NULL) {
+        fp = fopen(DATABASE_FILE, "w+");
+        if (fp == NULL) {
+            printf("kv: Failed to open database file");
+            fclose(fp);
+            exit(EXIT_FAILURE);
+        }
     }
     // Parse arguments
     int i; 
@@ -63,13 +95,21 @@ int main(int argc, char* argv[]) {
         if ('p' == arg[0]) {
             int res = put(arg);
             if (res < 0) {
-                printf("kv: failed to parse operation: %s\n", arg);
+                printf("kv: failed put operation: %s\n", arg);
+                continue;
+            }
+        } else if ('a' == arg[0]) {
+            int res = all(fp);
+            if (res < 0) {
+                printf("kv: failed to list database entries: %s\n", arg);
                 continue;
             }
         } else {
             printf("kv: unknown operation\n");
+            fclose(fp);
             exit(EXIT_FAILURE);
         }
     }
+    fclose(fp);
     exit(EXIT_SUCCESS);
 }
