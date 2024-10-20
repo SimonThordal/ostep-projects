@@ -1,2 +1,3 @@
 *.tar.gz
 *.o
+initial-kv/database.txt
