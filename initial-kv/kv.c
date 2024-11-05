@@ -14,9 +14,35 @@ typedef struct node
 } node_t;
 
 /**
+ * Given a comma separated string of arguments
+ * split them into a string per argument and put them in arg_arr.
+ * There can maximum be 3 arguments per string.
+ * 
+ * arg: a string with arguments of the form p,20,foo or g,10
+ * arg_arr: a pointer to an array of char arrays
+ */
+int argparse(char* arg, char** arg_arr) {
+    errno = 0;
+    int cnt = 0;
+    char *c = strtok(arg, SEPARATOR);
+    while (c != NULL) {
+        if (cnt > 2) {
+            fprintf(stderr, "kv: illegal argument received: %s", arg);
+            return -1;
+        }
+        arg_arr[cnt] = NULL;
+        arg_arr[cnt] = (char*)malloc(sizeof(c));
+        arg_arr[cnt] = c;
+        cnt++;
+        c = strtok(NULL, SEPARATOR);
+    }
+    return 0;
+}
+
+/**
  * Turn a k,v string into a node struct.
  */
-int parse(char* row, node_t* node) {
+int row_to_node(char* row, node_t* node) {
     errno = 0;
     char *c = strtok(row, SEPARATOR);
     if (c == NULL || *c=='\0') {
@@ -59,7 +85,7 @@ int initialize(node_t* head, FILE *fp) {
     while ((n = getline(&line, &len, fp)) != -1)
     {
         // Read the line into the current node
-        parse(line, head);
+        row_to_node(line, head);
         // Add the current node to linked list if it is not the first node
         if (prev != NULL) {
             prev->next = head;
@@ -79,22 +105,24 @@ int initialize(node_t* head, FILE *fp) {
 
 /**
  * Enter a value into the DB with a given key.
- * Expects arguments of the form p,KEY,VALUE
  */
-int put(char* _arg, node_t *head) {
-    // Skip the first tokenization as it is "p"
-    char* arg = malloc(strlen(_arg)*sizeof(char));
-    arg = strncpy(arg, _arg, strlen(_arg));
-    // Skip until the first comma as it is just the operation
-    char *c = strtok(arg, ",");
-    if (c == NULL || *c=='\0') {
+int put(char* key_c, char* val, node_t *head) {
+    node_t *node = (node_t*)malloc(sizeof(node_t));// Convert the key to a string
+    char *endptr;
+    long int key = strtol(key_c, &endptr, 10);
+    if (errno != 0) {
+        printf("kv: error encountered with errno: %c\n", errno);
+        errno = 0;
         return -1;
     }
-    node_t *node = (node_t*)malloc(sizeof(node_t));
-    int res = parse(&arg[2], node);
-    if (res < 0) {
+    // If we did not end at null the key included non digits
+    if (*endptr != '\0') {
         return -1;
     }
+    node->key = (int)key;
+    node->val = (char*)malloc(sizeof(val));
+    strcpy(node->val, val);
+    node->next = NULL;
     while (head->next != NULL)
     {
         head = head->next;
@@ -117,7 +145,18 @@ void all(node_t* head) {
  * Get the value stored in a given key.
  * Expects arguments of the form g,KEY
  */
-char *get(char* arg, node_t* head) {
+int get(char* key, node_t* head, char *res) {
+    node_t* node = head;
+    // Iterate through the linked list until the correct key is found
+    while (node != NULL)
+    {
+        if (node->key == atoi(key)) {
+            res = (char*)malloc(sizeof(node->val));
+            res = node->val;
+            return 0;
+        }
+        node = node->next;  
+    }
     return 0;
 }
 
@@ -136,33 +175,48 @@ int main(int argc, char* argv[]) {
             exit(EXIT_FAILURE);
         }
     }
+    int i, res; 
     node_t *head = (node_t*)malloc(sizeof(node_t));
     if (head == NULL) {
         fprintf(stderr, "kv: unable to allocate head");
         exit(EXIT_FAILURE);
     }
-    int res = initialize(head, fp);
+    res = initialize(head, fp);
     if (res < 0) {
         exit(EXIT_FAILURE);
     }
     // Parse arguments
-    int i; 
-    char* arg;
     for (i=1; i<argc; i++) {
-        arg = argv[i];
-        if ('p' == arg[0]) {
-            int res = put(arg, head);
+        char** arg = NULL;
+        arg = malloc(sizeof(char*)*3);
+        argparse(argv[i], arg);
+        if (strcmp("p", arg[0]) == 0) {
+            res = put(arg[1], arg[2], head);
             if (res < 0) {
-                printf("kv: failed put operation: %s\n", arg);
+                printf("kv: failed put operation: %s\n", argv[i]);
                 continue;
             }
-        } else if ('a' == arg[0]) {
+        } else if (strcmp("g", arg[0]) == 0) {
+            char* val = NULL;
+            res = get(arg[1], head, val);
+            if (res < 0) {
+                exit(EXIT_FAILURE);
+            }
+            if (val == NULL) {
+                printf("kv: key not found");
+                exit(EXIT_SUCCESS);
+            }
+            printf("Found value: %s", val);
+        } else if (strcmp("a", arg[0]) == 0) {
             all(head);
+        } else if (strcmp("d", arg[0]) == 0) {
+
         } else {
             printf("kv: unknown operation\n");
             fclose(fp);
             exit(EXIT_FAILURE);
         }
+        free(arg);
     }
     fclose(fp);
     exit(EXIT_SUCCESS);
